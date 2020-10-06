@@ -1,0 +1,90 @@
+**The challenge in the requirement an Image should be shown in the body conent of the email, not as an attachment. Basically email content supports HTML only. It is achieved by converting the image into 
+base64 format. The Image needs to be uploaded in MIME Repositaty using "SO2_MIME_REPOSITORY" tcode and then follow the below code. The below piece code will solve the issue.
+
+
+  DATA: lv_content TYPE xstring,
+        lv_output  TYPE string,
+        ls_loio    TYPE skwf_io,
+        lv_path    TYPE string,
+        ls_solix_1 TYPE  soli,
+        lt_output  TYPE BCSY_TEXT.
+        
+   DATA(lv_mr_api) = cl_mime_repository_api=>if_mr_api~get_api(
+*                      i_prefix = space
+                    ).
+   
+   **JPEG Obect in Xstring format
+  lv_mr_api->get(
+    EXPORTING
+      i_url                  = <image file path>                 " Object URL
+*    i_check_authority      = 'X'              " X Check Authorization, '' No Authorization Check
+    IMPORTING
+*    e_is_folder            =                  " X - Object is folder, '' - Otherwise file
+      e_content              = lv_content                 " Object Contents
+*    e_content_last_changed =                  " Change Time (UTC) of Content
+*    e_mime_type            =                  " MIME Type
+      e_loio                 = ls_loio                 " Technical Object Key Incl. MIME-GUID
+*  CHANGING
+*    c_language             =                  " Object Language
+    EXCEPTIONS
+      parameter_missing      = 1                " Parameter missing or is initial
+      error_occured          = 2                " Unspecified Error Occurred
+      not_found              = 3                " Object not found
+      permission_failure     = 4                " Missing Authorization
+      OTHERS                 = 5
+  ).
+  IF sy-subrc <> 0.
+* MESSAGE ID SY-MSGID TYPE SY-MSGTY NUMBER SY-MSGNO
+*   WITH SY-MSGV1 SY-MSGV2 SY-MSGV3 SY-MSGV4.
+  ENDIF.
+  
+  DATA(lv_obj_len) = xstrlen( lv_content ).
+  DATA(lv_graphic_length) = xstrlen( lv_content ).
+  DATA(lr_xstr) = lv_content(lv_obj_len).
+  DATA(lv_offset) = 0.
+  DATA(lv_length) = 255.
+  DATA: lt_solix TYPE TABLE OF solix,
+        ls_solix TYPE  solix.
+
+  WHILE lv_offset < lv_graphic_length.
+    DATA(lv_diff) = lv_graphic_length - lv_offset.
+    IF lv_diff > lv_length.
+      ls_solix-line = lr_xstr+lv_offset(lv_length).
+    ELSE.
+      ls_solix-line = lr_xstr+lv_offset(lv_diff).
+    ENDIF.
+    APPEND ls_solix TO lt_solix.
+    ADD lv_length TO lv_offset.
+  ENDWHILE.
+  
+    CALL FUNCTION 'SCMS_BASE64_ENCODE_STR'
+    EXPORTING
+      input  = lv_content
+    IMPORTING
+      output = lv_output.
+
+  DATA(lv_obj_len_1) = strlen( lv_output ).
+  DATA(lv_graphic_length_1) = strlen( lv_output ).
+  DATA(lr_str) = lv_output(lv_obj_len_1).
+  DATA(lv_offset_1) = 0.
+  DATA(lv_length_1) = 255.
+  
+  *  APPEND VALUE #( line = '<img src="data:image/jpeg;base64, ' ) TO lt_output.
+  APPEND VALUE #( line = lc_html_tag ) TO lt_output.
+  WHILE lv_offset_1 < lv_graphic_length_1.
+    DATA(lv_diff_1) = lv_graphic_length_1 - lv_offset_1.
+    IF lv_diff_1 > lv_length_1.
+      ls_solix_1-line = lr_str+lv_offset_1(lv_length_1).
+    ELSE.
+      ls_solix_1-line = lr_str+lv_offset_1(lv_diff_1).
+    ENDIF.
+    APPEND ls_solix_1 TO lt_output.
+    ADD lv_length_1 TO lv_offset_1.
+  ENDWHILE.
+*  APPEND VALUE #( line = '" style="width=600;height=50;"/>' ) TO lt_output.
+  APPEND VALUE #( line = lc_html_tag_end ) TO lt_output.
+  
+  ***Attach the output table content in email HTML content.
+  
+  
+  
